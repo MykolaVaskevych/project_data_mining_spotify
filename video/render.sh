@@ -1,12 +1,26 @@
 #!/bin/bash
-# Render all animation scenes in parallel at 1080p30 and combine into one video.
+# Render all scenes in parallel using GPU (OpenGL renderer) and combine into one video.
 # Usage:
-#   ./render.sh          # render 1080p + combine
-#   ./render.sh -ql      # render 480p + combine (fast preview)
+#   ./render.sh              # 1080p GPU render + combine
+#   ./render.sh -ql          # 480p GPU render + combine (preview)
+#   ./render.sh -qh 8        # 1080p, 8 parallel jobs
+#   ./render.sh --cairo       # force CPU/Cairo renderer (fallback)
 set -e
 
-QUALITY="${1:--qh}"
-JOBS="${2:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
+RENDERER="opengl"
+QUALITY="-qh"
+JOBS=""
+
+# Parse args
+for arg in "$@"; do
+    case "$arg" in
+        -ql|-qm|-qh|-qp|-qk) QUALITY="$arg" ;;
+        --cairo) RENDERER="cairo" ;;
+        [0-9]*) JOBS="$arg" ;;
+    esac
+done
+
+JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -30,16 +44,29 @@ SCENES=(
 )
 
 # Determine resolution dir name from quality flag
-if [ "$QUALITY" = "-ql" ]; then
-    RES_DIR="480p15"
-else
-    RES_DIR="1080p30"
-fi
+case "$QUALITY" in
+    -ql) RES_DIR="480p15" ;;
+    -qm) RES_DIR="720p30" ;;
+    -qh) RES_DIR="1080p60" ;;
+    -qp) RES_DIR="1440p60" ;;
+    -qk) RES_DIR="2160p60" ;;
+    *)   RES_DIR="1080p60" ;;
+esac
+
+# OpenGL renderer outputs to different dir naming (1080p60 not 1080p30)
+# but we also set frame_rate=30 in manim.cfg, so check both
+RES_DIR_ALT="${RES_DIR/60/30}"
 
 mkdir -p parts/logs
 
-# ── Step 1: Render all scenes in parallel ────────────────────────────────
-echo "═══ Rendering ${#SCENES[@]} scenes ($QUALITY) with $JOBS parallel jobs ═══"
+# Build renderer flags
+if [ "$RENDERER" = "opengl" ]; then
+    RENDER_FLAGS="--renderer=opengl --write_to_movie"
+    echo "═══ GPU (OpenGL) rendering: ${#SCENES[@]} scenes ($QUALITY) with $JOBS parallel jobs ═══"
+else
+    RENDER_FLAGS=""
+    echo "═══ CPU (Cairo) rendering: ${#SCENES[@]} scenes ($QUALITY) with $JOBS parallel jobs ═══"
+fi
 echo ""
 
 render_scene() {
@@ -48,7 +75,8 @@ render_scene() {
     local CLASS="${entry##*:}"
     local LOG="parts/logs/${FILE%.py}.log"
     echo "▸ Starting $FILE..."
-    if uv run manim "$QUALITY" --disable_caching "animations/$FILE" "$CLASS" --media_dir ./parts/ >"$LOG" 2>&1; then
+    if uv run manim "$QUALITY" $RENDER_FLAGS --disable_caching \
+        "animations/$FILE" "$CLASS" --media_dir ./parts/ >"$LOG" 2>&1; then
         echo "  ✓ $FILE done"
     else
         echo "  ✗ $FILE FAILED (see $LOG)"
@@ -56,23 +84,18 @@ render_scene() {
     fi
 }
 export -f render_scene
-export QUALITY
+export QUALITY RENDER_FLAGS
 
 FAILED=0
-# Run renders in parallel using background jobs, limited to $JOBS at a time
 PIDS=()
-IDX=0
 for entry in "${SCENES[@]}"; do
     render_scene "$entry" &
     PIDS+=($!)
-    IDX=$((IDX + 1))
-    # Throttle: wait if we hit the job limit
     if [ "${#PIDS[@]}" -ge "$JOBS" ]; then
         wait "${PIDS[0]}" || FAILED=$((FAILED + 1))
         PIDS=("${PIDS[@]:1}")
     fi
 done
-# Wait for remaining jobs
 for pid in "${PIDS[@]}"; do
     wait "$pid" || FAILED=$((FAILED + 1))
 done
@@ -80,6 +103,7 @@ done
 echo ""
 if [ "$FAILED" -gt 0 ]; then
     echo "ERROR: $FAILED scene(s) failed. Check parts/logs/ for details."
+    echo "Tip: try --cairo flag to fall back to CPU rendering."
     exit 1
 fi
 echo "All scenes rendered successfully."
@@ -95,10 +119,19 @@ for entry in "${SCENES[@]}"; do
     FILE="${entry%%:*}"
     CLASS="${entry##*:}"
     SCENE_DIR="${FILE%.py}"
-    MP4_PATH="$SCRIPT_DIR/parts/videos/$SCENE_DIR/$RES_DIR/$CLASS.mp4"
 
+    # Try both possible resolution dir names
+    MP4_PATH="$SCRIPT_DIR/parts/videos/$SCENE_DIR/$RES_DIR/$CLASS.mp4"
     if [ ! -f "$MP4_PATH" ]; then
-        echo "ERROR: Missing $MP4_PATH"
+        MP4_PATH="$SCRIPT_DIR/parts/videos/$SCENE_DIR/$RES_DIR_ALT/$CLASS.mp4"
+    fi
+    if [ ! -f "$MP4_PATH" ]; then
+        # Search for any mp4 in the scene dir
+        MP4_PATH=$(find "$SCRIPT_DIR/parts/videos/$SCENE_DIR" -name "$CLASS.mp4" -not -path "*/partial_movie_files/*" | head -1)
+    fi
+
+    if [ -z "$MP4_PATH" ] || [ ! -f "$MP4_PATH" ]; then
+        echo "ERROR: Missing render for $CLASS"
         exit 1
     fi
     echo "file '$MP4_PATH'" >> "$CONCAT_FILE"
