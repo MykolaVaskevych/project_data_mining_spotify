@@ -1,15 +1,16 @@
 #!/bin/bash
-# Render all animation scenes at 1080p30 and combine into one video.
+# Render all animation scenes in parallel at 1080p30 and combine into one video.
 # Usage:
 #   ./render.sh          # render 1080p + combine
 #   ./render.sh -ql      # render 480p + combine (fast preview)
 set -e
 
 QUALITY="${1:--qh}"
+JOBS="${2:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Scene files and their class names (order matters)
+# Scene files and their class names (order matters for concat)
 SCENES=(
     "s01_title.py:TitleScene"
     "s02_dataset_stats.py:DatasetStatsScene"
@@ -35,32 +36,57 @@ else
     RES_DIR="1080p30"
 fi
 
-# ── Step 1: Render all scenes ────────────────────────────────────────────
-echo "═══ Rendering all scenes ($QUALITY) ═══"
+mkdir -p parts/logs
+
+# ── Step 1: Render all scenes in parallel ────────────────────────────────
+echo "═══ Rendering ${#SCENES[@]} scenes ($QUALITY) with $JOBS parallel jobs ═══"
 echo ""
 
-FAILED=0
-for entry in "${SCENES[@]}"; do
-    FILE="${entry%%:*}"
-    CLASS="${entry##*:}"
-    echo "▸ Rendering $FILE ($CLASS)..."
-    if uv run manim "$QUALITY" --disable_caching "animations/$FILE" "$CLASS" --media_dir ./parts/ 2>&1 | tail -1; then
-        echo "  ✓ Done"
+render_scene() {
+    local entry="$1"
+    local FILE="${entry%%:*}"
+    local CLASS="${entry##*:}"
+    local LOG="parts/logs/${FILE%.py}.log"
+    echo "▸ Starting $FILE..."
+    if uv run manim "$QUALITY" --disable_caching "animations/$FILE" "$CLASS" --media_dir ./parts/ >"$LOG" 2>&1; then
+        echo "  ✓ $FILE done"
     else
-        echo "  ✗ FAILED: $FILE"
-        FAILED=$((FAILED + 1))
+        echo "  ✗ $FILE FAILED (see $LOG)"
+        return 1
     fi
-    echo ""
+}
+export -f render_scene
+export QUALITY
+
+FAILED=0
+# Run renders in parallel using background jobs, limited to $JOBS at a time
+PIDS=()
+IDX=0
+for entry in "${SCENES[@]}"; do
+    render_scene "$entry" &
+    PIDS+=($!)
+    IDX=$((IDX + 1))
+    # Throttle: wait if we hit the job limit
+    if [ "${#PIDS[@]}" -ge "$JOBS" ]; then
+        wait "${PIDS[0]}" || FAILED=$((FAILED + 1))
+        PIDS=("${PIDS[@]:1}")
+    fi
+done
+# Wait for remaining jobs
+for pid in "${PIDS[@]}"; do
+    wait "$pid" || FAILED=$((FAILED + 1))
 done
 
+echo ""
 if [ "$FAILED" -gt 0 ]; then
-    echo "ERROR: $FAILED scene(s) failed to render. Fix errors before combining."
+    echo "ERROR: $FAILED scene(s) failed. Check parts/logs/ for details."
     exit 1
 fi
+echo "All scenes rendered successfully."
+echo ""
 
 # ── Step 2: Build ffmpeg concat list ─────────────────────────────────────
 echo "═══ Combining into final video ═══"
-echo ""
 
 CONCAT_FILE="$SCRIPT_DIR/parts/concat.txt"
 > "$CONCAT_FILE"
@@ -78,10 +104,6 @@ for entry in "${SCENES[@]}"; do
     echo "file '$MP4_PATH'" >> "$CONCAT_FILE"
 done
 
-echo "Concat list:"
-cat "$CONCAT_FILE"
-echo ""
-
 # ── Step 3: Concatenate with ffmpeg ──────────────────────────────────────
 OUTPUT="$SCRIPT_DIR/final_video.mp4"
 
@@ -89,7 +111,7 @@ ffmpeg -y -f concat -safe 0 -i "$CONCAT_FILE" \
     -c:v libx264 -preset medium -crf 18 \
     -pix_fmt yuv420p \
     -movflags +faststart \
-    "$OUTPUT" 2>&1 | tail -5
+    "$OUTPUT" 2>&1 | tail -3
 
 echo ""
 echo "═══ Done ═══"
