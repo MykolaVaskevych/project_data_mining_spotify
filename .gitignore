@@ -10,3 +10,7 @@ wheels/
 .venv
 /__marimo__/session
 /CS4168 Project Specification 2026.pdf
+.DS_Store
+video/parts/
+video/final_video.mp4
+*.mp4
