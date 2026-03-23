@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.21.0"
+__generated_with = "0.21.1"
 app = marimo.App(width="medium")
 
 
@@ -34,7 +34,6 @@ def _():
     )
 
     alt.data_transformers.enable("vegafusion")
-
     return (
         ColumnTransformer,
         DBSCAN,
@@ -439,6 +438,40 @@ def _(mo):
 
 
 @app.cell
+def _(clean_df, np, pl):
+    _exclude = {"track_genre", "popularity", "explicit"}
+    _numeric_cols = [c for c in clean_df.columns if c not in _exclude]
+    _df_pd = clean_df.select(_numeric_cols).to_pandas()
+    _rows = []
+    for _col in _numeric_cols:
+        _vals = _df_pd[_col].values
+        _q1 = np.percentile(_vals, 25)
+        _q3 = np.percentile(_vals, 75)
+        _iqr = _q3 - _q1
+        _lower = _q1 - 1.5 * _iqr
+        _upper = _q3 + 1.5 * _iqr
+        _n = int(np.sum((_vals < _lower) | (_vals > _upper)))
+        _rows.append({
+            "feature": _col,
+            "outliers": _n,
+            "outlier_pct": round(_n / len(_vals) * 100, 1),
+        })
+    eda_outlier_summary = pl.DataFrame(_rows)
+    eda_outlier_summary
+    return (eda_outlier_summary,)
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+    Outliers are defined using the IQR method: values below Q1 − 1.5×IQR or above Q3 + 1.5×IQR.
+    `instrumentalness` (21%) and `speechiness` (12%) have the highest outlier rates — both reflect
+    genuine extremes in track characteristics rather than data errors.
+    """)
+    return
+
+
+@app.cell
 def _(mo):
     mo.md("""
     ### 1.9 EDA Summary — Implications for Downstream Tasks
@@ -499,7 +532,13 @@ def _(clean_df, mo):
     dominate over features like `danceability` (~0.7). DBSCAN's `eps` parameter also depends on distance scale.
     We do not apply PCA as a preprocessing step — PCA would reduce interpretability and is only used later for
     2D visualisation. We do not log-transform skewed features because StandardScaler is sufficient for
-    distance-based algorithms and preserves the original feature semantics.
+    distance-based algorithms and preserves the original feature semantics. We considered `RobustScaler`
+    given that `instrumentalness` and `speechiness` have the highest outlier rates in the dataset
+    (as shown in the EDA outlier analysis above). However, these extreme values are genuine signal
+    rather than noise — a track with very high speechiness is distinctively speech-heavy (characteristic
+    of hip-hop), and very high instrumentalness is a real property of certain tracks. Dampening these
+    with RobustScaler would reduce the very signal that helps separate genres, so StandardScaler is
+    preferable here.
     """)
     return cl_X, cl_genres
 
