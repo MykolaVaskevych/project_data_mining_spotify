@@ -11,6 +11,7 @@ def _():
     import altair as alt
     import numpy as np
     import pandas as pd
+    import polars.selectors as cs
 
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -33,8 +34,14 @@ def _():
         GradientBoostingRegressor,
     )
 
-    alt.data_transformers.enable("vegafusion")
+    from scipy import stats
+    import statsmodels.api as sm
 
+    import matplotlib.pyplot as plt
+
+    import seaborn as sns
+
+    alt.data_transformers.enable("vegafusion")
     return (
         ColumnTransformer,
         DBSCAN,
@@ -58,30 +65,25 @@ def _():
         np,
         pd,
         pl,
+        plt,
         r2_score,
         silhouette_score,
+        sns,
+        stats,
         train_test_split,
     )
 
 
 @app.cell
-def _(pl):
-    raw_df = pl.read_csv("tracks2026.csv")
-    raw_df
-    return (raw_df,)
-
-
-@app.cell
 def _(mo):
     mo.md("""
-    # CS4168 Data Mining Project — Spotify Tracks Analysis
+    # CS4168 Data Mining Project - Spotify Tracks Analysis (Group 14)
 
-    This notebook analyses a dataset of **2000 Spotify tracks** across **5 genres** (pop, indie-pop, synth-pop, r-n-b, hip-hop). We perform:
+    In this notebook we analyses an excerpt from the  Spotify Tracks Dataset available at:
+    https://huggingface.co/datasets/maharshipandya/spotify-tracks-dataset
 
-    1. **Exploratory Data Analysis (EDA)** — understanding the dataset structure, distributions, and relationships
-    2. **Clustering** — discovering natural groupings using K-Means and DBSCAN
-    3. **Classification** — predicting whether a track is above or below median popularity
-    4. **Regression** — predicting the exact popularity score
+
+    We perform our analysis with the objective of extracting information from the provided data on how reliably attributes of data instances can predict their popularity features.
     """)
     return
 
@@ -90,20 +92,19 @@ def _(mo):
 def _(mo):
     mo.md("""
     ## 1. Exploratory Data Analysis
+
+    We begin with an **Exploratory Data Analysis (EDA)** of our dataset. We do this to aid our understand and summarize the data that we our working with. We will accomplish this using quantitative and visual methods, following up on observations in the data as they appear ensuring not to take actions on assumptions that we may held on what relationships/structures should appear in the data.
+
+    ### 1.1 Dataset Overview
     """)
     return
 
 
 @app.cell
-def _(mo):
-    mo.md("""
-    ### 1.1 Dataset Shape and Types
-    """)
-    return
+def _(mo, pl):
+    raw_df = pl.read_csv("tracks2026.csv")
+    raw_df
 
-
-@app.cell
-def _(mo, pl, raw_df):
     eda_shape = raw_df.shape
     eda_schema = pl.DataFrame(
         {
@@ -111,58 +112,373 @@ def _(mo, pl, raw_df):
             "Type": [str(v) for v in raw_df.schema.values()],
         }
     )
+
     mo.vstack([
-        mo.md(f"**Shape:** {eda_shape[0]} rows x {eda_shape[1]} columns"),
+        mo.md(f"- **Observations:** {eda_shape[0]} \n- **Features:** {eda_shape[1]}"),
         eda_schema,
+        mo.md(f"**Sample data observations:**"),
+        raw_df.head()
     ])
+    return (raw_df,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+ 
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+    With the dataset loaded, we perform an initial inspection of its structure. We can see that the dataset is comprised of Spotify tracks across 5 genres (pop, indie-pop, synth-pop, r-n-b, hip-hop). There are 2,000 tracks (observations) and 17 columns (features), including both numerical and categorical features. Feature descriptors are taken from the datasets hugging face page to help contextualize their  meaning, scale and role within the analysis:
+
+
+    | Feature       | Description |
+    |--------------------|-------------|
+    | track_id           | The Spotify ID for the track |
+    | popularity         | A value between 0 and 100 indicating track popularity. Based on total plays and recency. Duplicate tracks are rated independently. Artist and album popularity derive from track popularity |
+    | duration_ms        | The track length in milliseconds |
+    | explicit           | Whether the track has explicit lyrics (`true` = yes, `false` = no or unknown) |
+    | danceability       | Measure (0.0–1.0) of how suitable a track is for dancing based on tempo, rhythm, and beat stability |
+    | energy             | Measure (0.0–1.0) of intensity and activity; higher values indicate faster, louder, noisier tracks |
+    | key                | The musical key using pitch class notation (e.g., 0 = C, 1 = C♯/D♭). `-1` indicates no key detected |
+    | loudness           | Overall loudness of a track in decibels (dB) |
+    | mode               | Indicates modality: major (`1`) or minor (`0`) |
+    | speechiness        | Measure (0.0–1.0) of spoken word presence. >0.66 = mostly speech, 0.33–0.66 = mixed, <0.33 = mostly music |
+    | acousticness       | Confidence measure (0.0–1.0) of whether the track is acoustic |
+    | instrumentalness   | Likelihood (0.0–1.0) that the track contains no vocals |
+    | liveness           | Likelihood (0.0–1.0) that the track was performed live (>0.8 indicates strong probability) |
+    | valence            | Measure (0.0–1.0) of musical positivity (higher = happier, lower = sadder) |
+    | tempo              | Estimated tempo in beats per minute (BPM) |
+    | time_signature     | Estimated time signature (range 3–7, representing 3/4 to 7/4) |
+    | track_genre        | The genre of the track |
+
+    With this foundation, we proceed to a more detailed analysis by applying independant processing steps to the numerical and categorical data respectivly.
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+    In this section we begin are true analysis of the data. Focusing on techniques for analysis the numerical attributes across all 2,000 observations. To do this we must first partition our numeric and cateigorical features. For some features this is obvious; others require a bit more thougth.
+
+    | Feature          | Category                     | Reason                                                                |
+    | ---------------- | ---------------------------- | --------------------------------------------------------------------- |
+    | track_id         | Categorical                  | Unique identifier; no numeric meaning or ordering                     |
+    | popularity       | Numerical (ordinal) | Bounded score (0–100) representing ranked popularity intensity        |
+    | duration_ms      | Numerical (continuous)       | True quantitative measurement of time duration                        |
+    | explicit         | Categorical (binary)         | Boolean indicator; represents a class (explicit vs not)               |
+    | danceability     | Numerical (continuous)       | Real-valued perceptual score (0–1) with meaningful scale              |
+    | energy           | Numerical (continuous)       | Continuous intensity measure derived from audio signal features       |
+    | key              | Categorical (nominal)        | Musical pitch class; integer encoding has no linear meaning           |
+    | loudness         | Numerical (continuous)       | Physical measurement in dB; meaningful magnitude and differences      |
+    | mode             | Categorical (binary)         | Two discrete classes: major vs minor; encoding is not magnitude-based |
+    | speechiness      | Numerical (continuous)       | Probability-like continuous measure of speech content                 |
+    | acousticness     | Numerical (continuous)       | Continuous confidence score of acoustic likelihood                    |
+    | instrumentalness | Numerical (continuous)       | Probability-like measure of absence of vocals                         |
+    | liveness         | Numerical (continuous)       | Continuous probability of live recording presence                     |
+    | valence          | Numerical (continuous)       | Continuous affective score (0–1 emotional positivity scale)           |
+    | tempo            | Numerical (continuous)       | Real-valued physical quantity (BPM)                                   |
+    | time_signature   | Categorical                  | Discrete structural classes (3/4–7/4); not linear or metric           |
+    | track_genre      | Categorical                  | Nominal label indicating genre class                                  |
+
+    As we examined the feature set we categorized that the track_id feature should be treated as an _irrelevant attribute_ (dropped) as it functions as an identifier rather than a predictor.
+    """)
     return
 
 
 @app.cell
 def _(raw_df):
-    eda_summary = raw_df.describe()
-    eda_summary
-    return
+    """
+    Droppoing irelevant features and seperating numeric features from caetgorical features in the dataset
+    """
+
+    df = raw_df.drop("track_id")
+
+    numeric_cols = [
+        "popularity", "duration_ms", "danceability", "energy",
+        "loudness", "speechiness", "acousticness", "instrumentalness",
+        "liveness", "valence", "tempo"
+    ]
+    numeric_df = raw_df.select(numeric_cols)
+
+    caetgorical_cols = [
+        "track_genre", "time_signature", "mode", "key", "explicit"
+    ]
+    caetgorical_df = raw_df.select(caetgorical_cols)
+    return (numeric_df,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
-    mo.md("""
-    The dataset has 2000 tracks with 17 columns. `track_id` is a string identifier we will drop for modelling.
-    `explicit` is stored as a Boolean and needs casting to integer for modelling.
-    `track_genre` is categorical. The remaining columns are numeric audio features.
-    Some columns show fewer than 2000 non-null values, indicating missing data that we must address.
+    mo.md(r"""
+    ### 1.2 EDA of Numerical Data
+
+    Now that we have iscolated the numeric data (described below) we can begin to inspect it's quality. To accomplish this we will inspect and handle any missing values, investigate outliers and normalize data where appropriate.
     """)
     return
 
 
 @app.cell
+def _(numeric_df):
+    numeric_df.head()
+    return
+
+
+@app.cell
+def _(numeric_df):
+    numeric_df.describe()
+    return
+
+
+@app.cell(hide_code=True)
 def _(mo):
-    mo.md("""
-    ### 1.2 Missing Values
+    mo.md(r"""
+    #### 1.2.1 Missing Values
+
+    We seen when we described the numeric data with Polars that there are features with missing values (null_count) withing the numeric data. Below we narrow down which features are missing any values from any of the 2,000 observations.
     """)
     return
 
 
 @app.cell
-def _(alt, pl, raw_df):
-    _null_data = (
-        raw_df.null_count()
-        .unpivot(on=raw_df.columns, variable_name="Column", value_name="Null Count")
-        .filter(pl.col("Null Count") > 0)
+def _(numeric_df, pl, raw_df):
+    null_summary = (
+        numeric_df.select([
+            pl.col(c).null_count().alias(c)
+            for c in numeric_df.columns
+        ])
+        .transpose(include_header=True, column_names=["null_count"])
+        .with_columns([
+            ((pl.col("null_count") / raw_df.height) * 100)
+            .round(2)
+            .alias("percent")
+        ])
+        .filter(pl.col("null_count") > 0)
+        .sort("null_count", descending=True)
     )
 
-    eda_null_chart = (
-        alt.Chart(_null_data)
-        .mark_bar()
-        .encode(
-            x=alt.X("Null Count:Q", title="Number of Missing Values"),
-            y=alt.Y("Column:N", sort="-x", title=""),
-            tooltip=["Column", "Null Count"],
+    print(null_summary)
+    return (null_summary,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    Now that we have established exactly which features have missing values we must investigate whether missing values are _missing at random_(MAR), _missing completly at random_(MCAR) or _missing not at random_(MNAR); before finally determining the best treatment for each feature.
+
+
+    Our domain knowledge tells us that all songs have a popularity, danceability, energy, tempo and loudness. Therfore the values are likly MCAR. However we will conduct some imperical tests to help support this intuition.
+
+    We will refer to those values with null values as _target_attribute_
+
+    We perform Welch's t-test on _target_attributes_ to help assess whether they are missing completly at random. When null values are Missing Complety At Random the probability that a value is missing is independant of both observerd and unobserved data. Welchs t-test provides a way to evaluate this claim for a given _target_attributes_ by comparing the difference between the mean of other attributes when the _target_attribute_ is null versus populated. Conventinally 0.05 is used as the threshold for this test, where a p_value of > 0.05 does not support a strong difference in mean between observations where the _target_attribue_ is mising or holds a value.
+    """)
+    return
+
+
+@app.cell
+def _(null_summary, numeric_df, pl, stats):
+    """
+    mcar_check
+    Computes welchs t-test to compare the difference in mean between observations of the target attribute when 
+    returns 
+    """
+    def mcar_check(df: pl.DataFrame, col_missing_values: str):
+        results = []
+
+        # Adds an bool indicator column, 1 if a value is missing for the col_missing_values
+        df_flag = df.with_columns(
+            pl.col(col_missing_values).is_null().cast(pl.Int8).alias("R")
         )
-        .properties(title="Missing Values per Column", width=400, height=200)
+
+        for col in df.columns:
+            if col in (col_missing_values, "R"):
+                continue
+
+            # convert dataframe to pandas for scipy
+            pdf = df_flag.select([col, "R"]).drop_nulls().to_pandas()
+
+            group0 = pdf[pdf["R"] == 0][col] # rows where value is present for col
+            group1 = pdf[pdf["R"] == 1][col] # rows where value is null for col
+
+            if len(group0) > 1 and len(group1) > 1:
+                stat, p = stats.ttest_ind(group0, group1, equal_var=False)
+                results.append((col, "t-test", p))
+
+
+        return pl.DataFrame(results, schema=["feature", "test", "p_value"])
+
+    for attribute_with_null_values in null_summary["column"]:
+        mcar_results = mcar_check(numeric_df, attribute_with_null_values)
+        print("Welchs t-test for attribute with null values:", attribute_with_null_values)
+        print(mcar_results.sort("p_value"))
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    After performing Welch's t-test, we see all p_values are greater than 0.05 supporting our intuition based of our domain knowledge that the features missing values popularity, danceability, energy, tempo and loudness should be present and are MCAR. The question then becomes how should the observations with null attributes be handeled.
+
+    We know from an earlier description that observations with missing values compose approaximatly 2% of the total observations. We also know using our own domain knowledge that popularity, danceability, energy, tempo and loudness cannot be reliably predicted using any quantitative means; therfore the decision is made to drop those observations who contain missing values.
+    """)
+    return
+
+
+@app.cell
+def _(mo, numeric_df):
+    before = numeric_df.height
+    clean_numeric_df = numeric_df.drop_nulls()
+    after = clean_numeric_df.height
+
+    mo.md(f"""
+    Number of observations before dropping missing values: **{before}**
+
+    Number of observations after dropping missing values: **{after}**
+    """)
+    return (clean_numeric_df,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    #### 1.2.2 Outliers
+
+    Now we have dealt with missing values in are numerical data we can move onto inspecting the distribution of this data. We use box plots to acomoplish this; summarizing the 5 numer summary and indicating outliers. We analye each numeric feature with box plots:
+    """)
+    return
+
+
+@app.cell
+def _(clean_numeric_df, plt):
+    pandas_numeric_df = clean_numeric_df.to_pandas()
+    pandas_numeric_df.plot(
+        kind="box",
+        subplots=True,
+        layout=(4, 4),   # adjust based on number of features
+        figsize=(12, 10),
+        sharex=False,
+        sharey=False
     )
-    eda_null_chart
+
+    plt.tight_layout()
+    plt.show()
+    return (pandas_numeric_df,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    What jumps out straigth away on inspecting the boxplots is the prevelance of outliers in many of the features. Generating the histograms for these features may give another perspective on what the root cause of these outliers may be.
+    """)
+    return
+
+
+@app.cell
+def _(pandas_numeric_df, plt):
+    pandas_numeric_df.hist(bins=30, figsize=(12, 8))
+    plt.tight_layout()
+    plt.show()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    Now that we have the box plots and histograms for are numeric data we can analyse each feature and decide what the best course of action is for each feature; tailoring our soloution to it's unique charachteristics.
+
+    **popularity**
+    has a notable spike at 0 — there are 422 tracks with zero popularity.
+    These are likely obscure or delisted tracks. The rest of the distribution is roughly right-skewed.
+    This spike will impact regression modelling since predicting exact zeros is difficult.
+
+    Crucially, popularity has near-zero linear correlation with all audio features (all |r| ≤ 0.10).
+    This means linear models will struggle to predict popularity — any predictive power must come from
+    non-linear interactions or genre information.
+
+    **duration_ms**
+
+    **danceability**
+
+    **energy**
+
+    **loudness**
+
+    **speechiness**
+
+    **acousticness**
+
+    **instrumentalness**
+
+    **liveness**
+
+    **valance**
+
+    **tempo**
+
+
+    With tailored data preperation applied to each feature complete, we can take a look at the final structure of our numeric data.
+    """)
+    return
+
+
+@app.cell
+def _(np, pandas_numeric_df, plt, sns):
+    corr_matrix = pandas_numeric_df.corr(numeric_only=True)
+    mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(
+        corr_matrix,
+        mask=mask,
+        annot=True,
+        fmt=".2f",
+        cmap="coolwarm",
+        center=0
+    )
+
+    plt.title("Correlation Matrix (Lower Triangle)")
+    plt.show()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    #### 1.2.3 Normalization
+    """)
+    return
+
+
+@app.cell
+def _(clean_df, mo, pl):
+    _zero_pop_count = clean_df.filter(pl.col("popularity") == 0).shape[0]
+    mo.md(f"""
+    Most audio features (danceability, energy, speechiness, acousticness, instrumentalness, liveness, valence)
+    range between 0 and 1. Loudness is on a dB scale (typically -60 to 0). Tempo ranges from ~50 to ~250 BPM.
+    Duration varies widely.
+
+    **Popularity** has a notable spike at 0 — there are **422 tracks** with zero popularity.
+    These are likely obscure or delisted tracks. The rest of the distribution is roughly right-skewed.
+    This spike will impact regression modelling since predicting exact zeros is difficult.
+
+    **Crucially, popularity has near-zero linear correlation with all audio features** (all |r| ≤ 0.10).
+    This means linear models will struggle to predict popularity — any predictive power must come from
+    non-linear interactions or genre information.
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+    ### 1.3 EDA of Categorical Data
+    """)
     return
 
 
@@ -191,15 +507,26 @@ def _(eda_null_rows, mo):
 
 
 @app.cell
-def _(mo):
-    mo.md("""
-    ### 1.3 Data Cleaning
-    """)
-    return
+def _(alt, mo, pl, raw_df):
+    _null_data = (
+        raw_df.null_count()
+        .unpivot(on=raw_df.columns, variable_name="Column", value_name="Null Count")
+        .filter(pl.col("Null Count") > 0)
+    )
+
+    eda_null_chart = (
+        alt.Chart(_null_data)
+        .mark_bar()
+        .encode(
+            x=alt.X("Null Count:Q", title="Number of Missing Values"),
+            y=alt.Y("Column:N", sort="-x", title=""),
+            tooltip=["Column", "Null Count"],
+        )
+        .properties(title="Missing Values per Column", width=400, height=200)
+    )
+    eda_null_chart
 
 
-@app.cell
-def _(mo, pl, raw_df):
     clean_df = (
         raw_df
         .drop("track_id")
@@ -213,54 +540,6 @@ def _(mo, pl, raw_df):
         clean_df.head(),
     ])
     return (clean_df,)
-
-
-@app.cell
-def _(mo):
-    mo.md("""
-    ### 1.4 Distribution of Numeric Features
-    """)
-    return
-
-
-@app.cell
-def _(alt, clean_df, pl):
-    _numeric_cols = [c for c in clean_df.columns if clean_df[c].dtype in (pl.Float64, pl.Int64, pl.Int32) and c != "track_genre"]
-    _melted = clean_df.select(_numeric_cols).unpivot(on=_numeric_cols, variable_name="Feature", value_name="Value")
-
-    eda_hist_chart = (
-        alt.Chart(_melted)
-        .mark_bar(opacity=0.7)
-        .encode(
-            x=alt.X("Value:Q", bin=alt.Bin(maxbins=30)),
-            y=alt.Y("count()", title="Count"),
-            tooltip=["count()"],
-        )
-        .properties(width=200, height=150)
-        .facet(facet="Feature:N", columns=4)
-        .resolve_scale(x="independent", y="independent")
-    )
-    eda_hist_chart
-    return
-
-
-@app.cell
-def _(clean_df, mo, pl):
-    _zero_pop_count = clean_df.filter(pl.col("popularity") == 0).shape[0]
-    mo.md(f"""
-    Most audio features (danceability, energy, speechiness, acousticness, instrumentalness, liveness, valence)
-    range between 0 and 1. Loudness is on a dB scale (typically -60 to 0). Tempo ranges from ~50 to ~250 BPM.
-    Duration varies widely.
-
-    **Popularity** has a notable spike at 0 — there are **{_zero_pop_count} tracks** with zero popularity.
-    These are likely obscure or delisted tracks. The rest of the distribution is roughly right-skewed.
-    This spike will impact regression modelling since predicting exact zeros is difficult.
-
-    **Crucially, popularity has near-zero linear correlation with all audio features** (all |r| ≤ 0.10).
-    This means linear models will struggle to predict popularity — any predictive power must come from
-    non-linear interactions or genre information.
-    """)
-    return
 
 
 @app.cell
@@ -460,6 +739,10 @@ def _(mo):
     very difficult. The near-zero correlations mean R-squared for linear models will be extremely low.
     The zero-popularity tracks add noise that hurts regression more than classification
     (since most zeros fall below the median anyway, classification correctly assigns them to class 0).
+
+
+
+    the dataset structures, distributions, and relationships present in the dataset. Once we have established the primary charachteristics of the dataset and concluded our inferences from our observations we will use these inferences to inform our approaces to clustering, classification and regression.
     """)
     return
 
@@ -468,6 +751,10 @@ def _(mo):
 def _(mo):
     mo.md("""
     ## 2. Clustering (Descriptive Analytics)
+
+    2. **Clustering** — discovering natural groupings using K-Means and DBSCAN
+    3. **Classification** — predicting whether a track is above or below median popularity
+    4. **Regression** — predicting the exact popularity score
     """)
     return
 
