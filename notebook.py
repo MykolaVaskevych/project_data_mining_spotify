@@ -123,7 +123,7 @@ def _(mo, pl):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-
+ 
     """)
     return
 
@@ -952,7 +952,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(final_categorical_df, final_df, mo):
     cl_feature_cols = [c for c in final_df.columns if c != "popularity" and not c.startswith("track_genre_")]
     cl_X = final_df.select(cl_feature_cols).to_pandas().values
@@ -991,7 +991,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(KMeans, Pipeline, StandardScaler, alt, cl_X, pl):
     km_k_range = range(2, 16)
     km_inertias = []
@@ -1038,7 +1038,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     KMeans,
     Pipeline,
@@ -1077,7 +1077,7 @@ def _(
     return (km_silhouettes,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(km_silhouettes, mo):
     _best_sil = max(km_silhouettes, key=lambda x: x["silhouette"])
     mo.md(f"""
@@ -1098,7 +1098,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(KMeans, PCA, Pipeline, StandardScaler, alt, cl_X, cl_genres, mo, pl):
     km_pipe_3 = Pipeline([
         ("scaler", StandardScaler()),
@@ -1159,7 +1159,7 @@ def _(KMeans, PCA, Pipeline, StandardScaler, alt, cl_X, cl_genres, mo, pl):
     return km_labels_3, km_labels_5, km_pca, km_pca_coords
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(km_labels_3, km_labels_5, km_pca, km_pca_coords, mo, silhouette_score):
     _sil_3 = silhouette_score(km_pca_coords, km_labels_3)
     _sil_5 = silhouette_score(km_pca_coords, km_labels_5)
@@ -1184,7 +1184,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(alt, cl_genres, km_labels_5, pl):
     _ct_df = pl.DataFrame({"Cluster": [str(c) for c in km_labels_5], "Genre": cl_genres})
     _ct = _ct_df.group_by(["Cluster", "Genre"]).len().rename({"len": "Count"})
@@ -1225,7 +1225,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(DBSCAN, Pipeline, StandardScaler, cl_X, cl_genres, pl, silhouette_score):
     db_results = []
     for _eps in [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]:
@@ -1282,7 +1282,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     DBSCAN,
     Pipeline,
@@ -1350,7 +1350,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(alt, cl_genres, db_labels, pl):
     _db_ct = pl.DataFrame({"Cluster": [str(c) for c in db_labels], "Genre": cl_genres})
     _db_ct_agg = _db_ct.group_by(["Cluster", "Genre"]).len().rename({"len": "Count"})
@@ -1419,7 +1419,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(final_df, mo, pl):
     clf_median = final_df["popularity"].median()
     clf_df = final_df.with_columns(
@@ -1444,7 +1444,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(StandardScaler, clf_df, mo, train_test_split):
     _clf_pdf = clf_df.to_pandas()
 
@@ -1457,7 +1457,7 @@ def _(StandardScaler, clf_df, mo, train_test_split):
 
     clf_preprocessor = StandardScaler()
 
-    mo.md(f"""
+    mo.md(f"""j
     **Features:** {clf_X.shape[1]} — all numeric (genre already one-hot encoded in EDA, explicit and instrumentalness_binary as int)
 
     **Pipeline structure:** `StandardScaler` → Model. All preprocessing is inside the pipeline, preventing data leakage — the scaler fits only on training folds during CV.
@@ -1494,7 +1494,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     LogisticRegression,
     Pipeline,
@@ -1529,7 +1529,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     Pipeline,
     RandomForestClassifier,
@@ -1564,7 +1564,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     GradientBoostingClassifier,
     Pipeline,
@@ -1599,7 +1599,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(alt, clf_gb_cv, clf_lr_cv, clf_rf_cv, mo, pl):
     _clf_comp = pl.DataFrame({
         "Model": ["Logistic Regression", "Random Forest", "Gradient Boosting"],
@@ -1623,7 +1623,7 @@ def _(alt, clf_gb_cv, clf_lr_cv, clf_rf_cv, mo, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(clf_gb_cv, clf_lr_cv, clf_rf_cv, mo):
     _best_clf = max(
         [("Logistic Regression", clf_lr_cv.mean()), ("Random Forest", clf_rf_cv.mean()), ("Gradient Boosting", clf_gb_cv.mean())],
@@ -1646,12 +1646,14 @@ def _(mo):
     #### Hyperparameter Search Results
 
     Each model was tuned with `RandomizedSearchCV` (200 random configurations, 5-fold CV, `n_jobs=-1`).
-    The table shows all 600 experiments — filterable by model, sortable by score.
+    Full results are in the attached `clf_tuning_results.csv`. The `mean_cv_score` here reflects the best
+    score found during the search; the re-evaluation scores in sections 3.4–3.6 use those fixed parameters
+    and are slightly more conservative. Random Forest is the winner in both.
     """)
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo, pl):
     import os as _os
     mo.stop(
@@ -1674,7 +1676,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     alt,
     classification_report,
@@ -1746,7 +1748,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(alt, clf_final_pipe, np, pl):
     _clf_model = clf_final_pipe.named_steps["clf"]
     if hasattr(_clf_model, "feature_importances_"):
@@ -1802,7 +1804,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(StandardScaler, final_df, mo, train_test_split):
     _reg_pdf = final_df.to_pandas()
 
@@ -1852,7 +1854,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     Pipeline,
     Ridge,
@@ -1892,7 +1894,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     Pipeline,
     RandomForestRegressor,
@@ -1928,7 +1930,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     GradientBoostingRegressor,
     Pipeline,
@@ -1964,7 +1966,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     alt,
     mo,
@@ -2020,7 +2022,7 @@ def _(
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo, reg_gb_cv_r2, reg_rf_cv_r2, reg_ridge_cv_r2):
     _best_reg = max(
         [("Ridge", reg_ridge_cv_r2.mean()), ("Random Forest", reg_rf_cv_r2.mean()), ("Gradient Boosting", reg_gb_cv_r2.mean())],
@@ -2042,12 +2044,14 @@ def _(mo):
     #### Hyperparameter Search Results
 
     Ridge used `GridSearchCV` over 60 log-spaced alpha values. RF and GB used `RandomizedSearchCV`
-    (200 configurations each, 5-fold CV). Table shows all 460 experiments.
+    (200 configurations each, 5-fold CV). Full results are in the attached `reg_tuning_results.csv`.
+    The `mean_cv_score` here reflects the best score found during the search; the re-evaluation scores
+    in sections 4.3–4.5 use those fixed parameters and are slightly more conservative. Random Forest wins.
     """)
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo, pl):
     import os as _os
     mo.stop(
@@ -2070,7 +2074,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     alt,
     mean_squared_error,
@@ -2138,7 +2142,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(alt, pd, reg_final_pred, reg_y_test):
     _residuals = reg_y_test - reg_final_pred
     _resid_df = pd.DataFrame({"Predicted": reg_final_pred, "Residual": _residuals})
@@ -2183,7 +2187,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(alt, np, pl, reg_final_pipe):
     _reg_model = reg_final_pipe.named_steps["reg"]
     if hasattr(_reg_model, "feature_importances_"):
@@ -2229,7 +2233,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     clf_gb_cv,
     clf_lr_cv,
