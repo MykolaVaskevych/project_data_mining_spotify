@@ -209,8 +209,8 @@ def _(raw_df):
     caetgorical_cols = [
         "track_genre", "time_signature", "mode", "key", "explicit"
     ]
-    caetgorical_df = raw_df.select(caetgorical_cols)
-    return (numeric_df,)
+    categorical_df = raw_df.select(caetgorical_cols)
+    return categorical_df, numeric_df
 
 
 @app.cell(hide_code=True)
@@ -331,17 +331,31 @@ def _(mo):
 
 
 @app.cell
-def _(mo, numeric_df):
+def _(categorical_df, mo, numeric_df, pl):
+    numeric_df_indexed = numeric_df.with_row_index("row_id")
+    categorical_df_indexed = categorical_df.with_row_index("row_id")
+
     before = numeric_df.height
-    clean_numeric_df = numeric_df.drop_nulls()
+    clean_numeric_df = numeric_df_indexed.drop_nulls()
     after = clean_numeric_df.height
+    clean_categorical_df = categorical_df_indexed.filter(
+        pl.col("row_id").is_in(clean_numeric_df["row_id"])
+    )
+    clean_categorical_df = categorical_df_indexed.join(
+        clean_numeric_df.select("row_id"),
+        on="row_id",
+        how="inner"
+    )
+
+    clean_numeric_df = clean_numeric_df.drop("row_id")
+    clean_categorical_df = clean_categorical_df.drop("row_id")
 
     mo.md(f"""
     Number of observations before dropping missing values: **{before}**
 
     Number of observations after dropping missing values: **{after}**
     """)
-    return (clean_numeric_df,)
+    return clean_categorical_df, clean_numeric_df
 
 
 @app.cell(hide_code=True)
@@ -384,52 +398,218 @@ def _(pandas_numeric_df, plt):
     pandas_numeric_df.hist(bins=30, figsize=(12, 8))
     plt.tight_layout()
     plt.show()
+    plt.close("")
+    return
+
+
+@app.cell
+def _(clean_numeric_df, mo, pl):
+    zero_popularity_count = clean_numeric_df.filter(pl.col("popularity") == 0).shape[0]
+    percenteage_zero_pop_count = (zero_popularity_count / len(clean_numeric_df.rows()) ) * 100
+    mo.md(f"""
+    Now that we have the box plots and histograms for are numeric data we can analyse each feature and decide what the best course of action is for each feature; tailoring our data processing to it's unique charachteristics.
+
+    The **popularity**
+    exhibts no significant outliers using the IQR rule. However, it shows a pronounced spike at 0 with {zero_popularity_count}({percenteage_zero_pop_count:.2f}%) of tracks having zero popularity. This indicates a zero-inflated distribution. We hypothsis this could be due to obscure or delisted tracks, platform bias, new listings or censoring altough this cannot be validated through data alone.
+
+    When excluding zero values, the remaining distribution appears multi-modal. The presence of a large mass at zero may introduce challenges for modelling, particularly for regression, where zero-inflation can violate standard assumptions and bias predictions. Distance-based methods such as K-NN may also be affected, as the high frequency of identical values reduces the feature’s discriminative power.
+
+    As modelling techniques have not yet been finalised, no preprocessing transformations (e.g., zero-handling or feature engineering) will be applied at this stage to avoid premature assumptions about the data.
+    """)
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    Now that we have the box plots and histograms for are numeric data we can analyse each feature and decide what the best course of action is for each feature; tailoring our soloution to it's unique charachteristics.
+    The **duration_ms** feature exhibts a rigth-skew, with most tracks clustered at shorter durations and a small number of substantially longer tracks appearing as outliers in the box plot. This pattern is consistent with expectations for music data and does not inherently violate modelling assumptions.
 
-    **popularity**
-    has a notable spike at 0 — there are 422 tracks with zero popularity.
-    These are likely obscure or delisted tracks. The rest of the distribution is roughly right-skewed.
-    This spike will impact regression modelling since predicting exact zeros is difficult.
+    However, the presence of a long right tail and high-value outliers may disproportionately influence scale-sensitive models. Additionally, differences in duration are more meaningful interpreted on a relative scale (e.g., the perceived difference between 2 and 4 minutes is greater than between 1 and 2 minutes) by music listeners.
 
-    Crucially, popularity has near-zero linear correlation with all audio features (all |r| ≤ 0.10).
-    This means linear models will struggle to predict popularity — any predictive power must come from
-    non-linear interactions or genre information.
-
-    **duration_ms**
-
-    **danceability**
-
-    **energy**
-
-    **loudness**
-
-    **speechiness**
-
-    **acousticness**
-
-    **instrumentalness**
-
-    **liveness**
-
-    **valance**
-
-    **tempo**
-
-
-    With tailored data preperation applied to each feature complete, we can take a look at the final structure of our numeric data.
+    To address this, a log transformation is applied to duration_ms, which reduces skewness, compresses extreme values, and improves the feature’s suitability for modelling while preserving ordinal relationships.
     """)
     return
 
 
 @app.cell
-def _(np, pandas_numeric_df, plt, sns):
-    corr_matrix = pandas_numeric_df.corr(numeric_only=True)
+def _(clean_numeric_df, pl, plt):
+    min_val = clean_numeric_df.select(pl.col("duration_ms").min()).item()
+
+    new_clean_numeric_df = clean_numeric_df.with_columns(
+        (pl.col("duration_ms") + abs(min_val) + 1)
+        .log()
+        .alias("duration_ms")
+    )
+
+    duration_ms_after = new_clean_numeric_df['duration_ms'].to_pandas()
+    duration_ms_after.hist(bins=30, figsize=(7, 5))
+
+    plt.title("Log-Transformed Duration MS Distribution")
+    plt.xlabel("Log(Duration (ms))")
+    plt.ylabel("Frequency")
+    plt.tight_layout()
+    plt.show()
+    plt.close("all")
+    return (new_clean_numeric_df,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    The **danceability**, **energy**, **acousticness**, **liveness** and **valance** features are bounded within the expected rangs [0,1], and no values fall outside this range. Observations appearing as outliers in each features respective box plot represent valid edge cases rather than extreme erroneous outliers. As a result we take no action on the features as to do so would risk distorting the semantic interpretation of the features and discarding potentially informative variation.
+    """)
+    return
+
+
+@app.cell
+def _(mo, new_clean_numeric_df, pl):
+
+    zero_instrumentalness_count = new_clean_numeric_df.filter(pl.col("instrumentalness") == 0).shape[0]
+    zero_instrumentalness_percent = (zero_instrumentalness_count / len(new_clean_numeric_df.rows())) * 100
+
+    low_instrumentalness_count = new_clean_numeric_df.filter(pl.col("instrumentalness") < 0.2).shape[0]
+    low_instrumentalness_percent = (low_instrumentalness_count / len(new_clean_numeric_df.rows())) * 100
+
+    mo.md(f"""
+
+    The instrumentalness feature exhibits a zero-inflated and heavily right-skewed distribution, with {zero_instrumentalness_count} observations ({zero_instrumentalness_percent:.2f}%) equal to 0 and {low_instrumentalness_count} observations ({low_instrumentalness_percent:.2f}%) falling below 0.2. This indicates that the majority of tracks in the dataset have low predicted instrumental confidence, with only a small subset showing strong instrumental characteristics.
+
+    This pattern likely reflects the presence of vocal-heavy music and may also include speech-oriented or non-musical audio content within the dataset. However, instrumentalness is a confidence score rather than a direct measurement, meaning low values may not strictly indicate the absence of instrumentation.
+
+    Given the strong separation between near-zero values and the small proportion of high-confidence instrumental tracks, a binary representation is considered for downstream analysis. To evaluate this, we examine the impacts of different thresholds for binarization on other features of the dataset to examine whether the 5 number summary group-wise distributions remain stable across thresholds.
+    """)
+
+    return
+
+
+@app.cell
+def _(new_clean_numeric_df, plt):
+    pandas_df = new_clean_numeric_df.to_pandas()
+
+    thresholds = [0.3, 0.5, 0.8]
+    fig2, axes = plt.subplots(5, len(thresholds), figsize=(15, 15))
+
+    for ax, t in zip(axes[0], thresholds):
+        grouped = pandas_df.assign(group=pandas_df["instrumentalness"] > t)
+        grouped.boxplot(column="energy", by="group", ax=ax)
+        ax.set_title(f"threshold = {t}")
+
+    for ax, t in zip(axes[1], thresholds):
+        grouped = pandas_df.assign(group=pandas_df["instrumentalness"] > t)
+        grouped.boxplot(column="danceability", by="group", ax=ax)
+        ax.set_title(f"threshold = {t}")
+
+    for ax, t in zip(axes[2], thresholds):
+        grouped = pandas_df.assign(group=pandas_df["instrumentalness"] > t)
+        grouped.boxplot(column="valence", by="group", ax=ax)
+        ax.set_title(f"threshold = {t}")
+
+    for ax, t in zip(axes[3], thresholds):
+        grouped = pandas_df.assign(group=pandas_df["instrumentalness"] > t)
+        grouped.boxplot(column="acousticness", by="group", ax=ax)
+        ax.set_title(f"threshold = {t}")
+
+    for ax, t in zip(axes[4], thresholds):
+        grouped = pandas_df.assign(group=pandas_df["instrumentalness"] > t)
+        grouped.boxplot(column="loudness", by="group", ax=ax)
+        ax.set_title(f"threshold = {t}")
+
+    plt.suptitle("")
+    plt.tight_layout()
+    plt.show()
+    plt.close()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    A threshold of instrumentalness > 0.5 is used to classify tracks as instrumental, aligning with common interpretability thresholds for this feature while preserving meaningful signal.
+    """)
+    return
+
+
+@app.cell
+def _(clean_categorical_df, new_clean_numeric_df, pl):
+    categorical_df_1 = clean_categorical_df.with_columns(
+        (new_clean_numeric_df["instrumentalness"] > 0.5)
+        .cast(pl.Int8)
+        .alias("instrumentalness_binary")
+    )
+
+    numeric_df_1 = new_clean_numeric_df.drop("instrumentalness")
+    return categorical_df_1, numeric_df_1
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    #### 1.2.3 Normalization
+
+    Many of the numeric features including danceability, energy, speechiness, acousticness, instrumentalness, liveness and valance are probalistic descriptors of a track. Because they are continuous measures intended to be compared directly, it is important that they share a common scale to avoid any single descriptor dominating the others. By Spotify's specification and from our own exploration we see that all of these features already fall within [0, 1] and threfore require no further action.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    The remaining features, **loudness** and **tempo**, are also track descriptors but differ from the others in that they are direct measurements as opposed to probabilistic descriptors. Loudness is expressed on a dB scale (typically −60 to 0) and tempo ranges from approximately 50 to 250 BPM, so both require scaling to be comparable with the other features.
+
+    To achieve this we apply Robust Scaling, which centres each feature on its median and scales by the interquartile range. This approach was chosen over Min-Max nomralization becaise, as observed in our earlier box plots, both loudness and tempo contain outliers. Min-Max is sensitive to outliers and would compress the majority of values into a narrow range. While Robust Scaling does not produce strict [0,1] bounds, for most models stable and representative scaling is preferable to a forced bounded range.
+    """)
+    return
+
+
+@app.cell
+def _(numeric_df_1, pl):
+    features_to_scale = ["loudness", "tempo"]
+
+    numeric_df_2 = numeric_df_1.with_columns([
+        ((pl.col(c) - numeric_df_1[c].median()) / (numeric_df_1[c].quantile(0.75) - numeric_df_1[c].quantile(0.25)))
+        .alias(c)
+        for c in features_to_scale
+    ])
+    return (numeric_df_2,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    With tailored data preperation applied to each feature, we can analyse the final structure of our numeric data.
+    """)
+    return
+
+
+@app.cell
+def _(numeric_df_2, plt):
+    pandas_numeric_df_2 = numeric_df_2.to_pandas()
+    pandas_numeric_df_2.hist(bins=30, figsize=(12, 8))
+    plt.tight_layout()
+    plt.show()
+    plt.close("")
+    return (pandas_numeric_df_2,)
+
+
+@app.cell
+def _(pandas_numeric_df_2, plt):
+    pandas_numeric_df_2.plot(
+        kind="box",
+        subplots=True,
+        layout=(4, 4),   # adjust based on number of features
+        figsize=(12, 10),
+        sharex=False,
+        sharey=False
+    )
+
+    plt.tight_layout()
+    plt.show()
+    return
+
+
+@app.cell
+def _(np, pandas_numeric_df_2, plt, sns):
+    corr_matrix = pandas_numeric_df_2.corr(numeric_only=True)
     mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
 
     plt.figure(figsize=(10, 8))
@@ -442,7 +622,7 @@ def _(np, pandas_numeric_df, plt, sns):
         center=0
     )
 
-    plt.title("Correlation Matrix (Lower Triangle)")
+    plt.title("Numeric Feature Correlation Matrix (Lower Triangle)")
     plt.show()
     return
 
@@ -450,26 +630,7 @@ def _(np, pandas_numeric_df, plt, sns):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    #### 1.2.3 Normalization
-    """)
-    return
-
-
-@app.cell
-def _(clean_df, mo, pl):
-    _zero_pop_count = clean_df.filter(pl.col("popularity") == 0).shape[0]
-    mo.md(f"""
-    Most audio features (danceability, energy, speechiness, acousticness, instrumentalness, liveness, valence)
-    range between 0 and 1. Loudness is on a dB scale (typically -60 to 0). Tempo ranges from ~50 to ~250 BPM.
-    Duration varies widely.
-
-    **Popularity** has a notable spike at 0 — there are **422 tracks** with zero popularity.
-    These are likely obscure or delisted tracks. The rest of the distribution is roughly right-skewed.
-    This spike will impact regression modelling since predicting exact zeros is difficult.
-
-    **Crucially, popularity has near-zero linear correlation with all audio features** (all |r| ≤ 0.10).
-    This means linear models will struggle to predict popularity — any predictive power must come from
-    non-linear interactions or genre information.
+    In our final exploration of the numeric data, popularity shows near-zero pairwise linear correlation with all audio features (all |r| ≤ 0.10). This suggests that no single audio feature is a strong linear predictor of popularity in isolation. However, a combination of features may still carry linear predictive signal.
     """)
     return
 
@@ -478,74 +639,30 @@ def _(clean_df, mo, pl):
 def _(mo):
     mo.md("""
     ### 1.3 EDA of Categorical Data
+
+    With our numeric attributes explored, we now move on to applying techniques to explore our categorical data
     """)
     return
 
 
 @app.cell
-def _(mo, pl, raw_df):
-    eda_null_rows = raw_df.filter(
-        pl.any_horizontal(pl.all().is_null())
-    )
-    mo.vstack([
-        mo.md(f"**Rows with at least one null:** {eda_null_rows.shape[0]} out of {raw_df.shape[0]} ({eda_null_rows.shape[0] / raw_df.shape[0] * 100:.1f}%)"),
-        eda_null_rows.head(10),
-    ])
-    return (eda_null_rows,)
-
-
-@app.cell
-def _(eda_null_rows, mo):
-    mo.md(f"""
-    There are **{eda_null_rows.shape[0]} rows** with missing values in popularity, danceability, energy, loudness, and tempo.
-    These appear to be the same rows — incomplete records where multiple fields are missing simultaneously.
-    Since {eda_null_rows.shape[0]} out of 2000 is only {eda_null_rows.shape[0] / 20:.1f}%, we drop these rows.
-    Imputation would be unreliable because multiple features are missing per row, making it difficult to
-    estimate any single feature from the others.
-    """)
+def _(categorical_df_1):
+    categorical_df_1.head()
     return
 
 
-@app.cell
-def _(alt, mo, pl, raw_df):
-    _null_data = (
-        raw_df.null_count()
-        .unpivot(on=raw_df.columns, variable_name="Column", value_name="Null Count")
-        .filter(pl.col("Null Count") > 0)
-    )
-
-    eda_null_chart = (
-        alt.Chart(_null_data)
-        .mark_bar()
-        .encode(
-            x=alt.X("Null Count:Q", title="Number of Missing Values"),
-            y=alt.Y("Column:N", sort="-x", title=""),
-            tooltip=["Column", "Null Count"],
-        )
-        .properties(title="Missing Values per Column", width=400, height=200)
-    )
-    eda_null_chart
-
-
-    clean_df = (
-        raw_df
-        .drop("track_id")
-        .drop_nulls()
-        .with_columns(
-            pl.col("explicit").cast(pl.Int32)
-        )
-    )
-    mo.vstack([
-        mo.md(f"**Clean dataset:** {clean_df.shape[0]} rows x {clean_df.shape[1]} columns (dropped {raw_df.shape[0] - clean_df.shape[0]} null rows, removed `track_id`, cast `explicit` to int)"),
-        clean_df.head(),
-    ])
-    return (clean_df,)
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    The first thing that sticks out when inspecting a portion of this categorical data is .....
+    """)
+    return
 
 
 @app.cell
 def _(mo):
     mo.md("""
-    ### 1.5 Genre Distribution
+    #### 1.3.1 Genre Distribution
     """)
     return
 
@@ -583,7 +700,7 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md("""
-    ### 1.6 Correlation Analysis
+    #### 1.3.2 Correlation Analysis
     """)
     return
 
@@ -630,7 +747,7 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md("""
-    ### 1.7 Popularity by Genre
+    #### 1.3.3 Popularity by Genre
     """)
     return
 
@@ -666,7 +783,7 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md("""
-    ### 1.8 Feature Distributions by Genre
+    #### 1.3.4 Feature Distributions by Genre
     """)
     return
 
@@ -720,7 +837,7 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md("""
-    ### 1.9 EDA Summary — Implications for Downstream Tasks
+    ### 1.4 EDA Summary — Implications for Downstream Tasks
 
     **Key finding:** Popularity has near-zero linear correlation with every audio feature (all |r| ≤ 0.10).
     No single feature is a good linear predictor of popularity. This will be the dominant theme across all modelling tasks.
