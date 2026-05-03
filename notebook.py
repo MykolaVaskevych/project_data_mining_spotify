@@ -630,7 +630,14 @@ def _(np, pandas_numeric_df_2, plt, sns):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    In our final exploration of the numeric data, popularity shows near-zero pairwise linear correlation with all audio features (all |r| ≤ 0.10). This suggests that no single audio feature is a strong linear predictor of popularity in isolation. However, a combination of features may still carry linear predictive signal.
+    Key correlations:
+
+    - **Energy** and **loudness** have a strong positive correlation (0.633) — louder tracks tend to be more energetic
+    - **Acousticness** is negatively correlated with both **energy** and **loudness** — acoustic tracks are quieter and calmer
+    - **Danceability** and **valence** show moderate positive correlation — happier-sounding tracks tend to be more danceable
+    - **popularity** shows near-zero pairwise linear correlation with all audio features (all |r| ≤ 0.10). This suggests that no single audio feature is a strong linear predictor of popularity in isolation. However, a combination of features may still carry linear predictive signal.
+
+    These correlations matter for modelling: energy-loudness multicollinearity could affect linear models (logistic regression, ridge). Tree-based models are robust to this. We will use StandardScaler inside pipelines, which does not eliminate collinearity but ensures no feature dominates due to scale.
     """)
     return
 
@@ -640,7 +647,9 @@ def _(mo):
     mo.md("""
     ### 1.3 EDA of Categorical Data
 
-    With our numeric attributes explored, we now move on to applying techniques to explore our categorical data
+    With our numeric attributes explored, we now move on to applying techniques to explore our categorical data We begin by preparing our data for analysis before moving on to an exploration of how feature relationships and structures.
+
+    #### 1.3.1 Categorical Data Prepration
     """)
     return
 
@@ -652,24 +661,49 @@ def _(categorical_df_1):
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    The first thing that sticks out when inspecting a portion of this categorical data is .....
+def _(categorical_df_1, mo):
+    unique_genres = len(set(categorical_df_1["track_genre"]))
+
+    mo.md(f"""
+    Upon inspecting the categorical features of this data we observe that **track_genre** and **explicit** are stored as strings and bools respectivly. As many ML algorithms require all data to be numerical we will encode these features. As explicit is a binary feature we can cast the bool value from True & False to 1 & 0. As for track_genre, it contains {unique_genres} unique genres as nominal data therfore we apply one-hot encoding to the values of the attribute.
     """)
     return
+
+
+@app.cell
+def _(categorical_df_1, pl):
+    """
+    Applying one-hot encoding to track_genre and converting explicit bool to int
+    """
+    categorical_df_2 = categorical_df_1.to_dummies(columns=["track_genre"])
+    categorical_df_3 = categorical_df_2.with_columns(pl.col("explicit").cast(pl.Int8))
+    categorical_df_3.head()
+    return (categorical_df_3,)
 
 
 @app.cell
 def _(mo):
     mo.md("""
-    #### 1.3.1 Genre Distribution
+    #### 1.3.2 Track Genre Analysis
     """)
     return
 
 
 @app.cell
-def _(alt, clean_df):
-    _genre_counts = clean_df.group_by("track_genre").len().rename({"len": "count"})
+def _(alt, categorical_df_3, pl):
+    # Sum each one-hot encoded genre column, then reshape to long format
+    genre_cols = [col for col in categorical_df_3.columns if col.startswith("track_genre_")]
+
+    _genre_counts = (
+        categorical_df_3
+        .select(genre_cols)
+        .sum()
+        .unpivot(variable_name="track_genre", value_name="count")
+        .with_columns(
+            pl.col("track_genre").str.replace("track_genre_", "")
+        )
+        .sort("count", descending=True)
+    )
 
     eda_genre_chart = (
         alt.Chart(_genre_counts)
@@ -689,26 +723,56 @@ def _(alt, clean_df):
 @app.cell
 def _(mo):
     mo.md("""
-    The genre distribution is **imbalanced**: pop and indie-pop have the most tracks (~500 each),
-    while r-n-b and hip-hop have fewer (~300 each). Synth-pop is in between (~400).
-    This imbalance is relevant for clustering — if clusters aligned perfectly with genres,
-    we would expect unequal cluster sizes. It also affects classification if genre is used as a feature.
+    The genre distribution is imbalanced: pop and indie-pop have the most tracks (~500 each), while r-n-b and hip-hop have fewer (~300 each). Synth-pop sits in between (~400). This is worth noting if genre is used as a classification target, as a model could achieve reasonable accuracy by simply predicting the majority class. For clustering, genre labels won't be used as input, but if we later compare clusters to genres, we should expect the larger genres to be spread across or dominate more clusters.
     """)
     return
 
 
 @app.cell
-def _(mo):
-    mo.md("""
-    #### 1.3.2 Correlation Analysis
-    """)
+def _(alt, categorical_df_3, pl):
+    genre_cols_1 = [col for col in categorical_df_3.columns if col.startswith("track_genre_")]
+
+    _genre_explicit = (
+        categorical_df_3
+        .select(genre_cols_1 + ["explicit"])
+        .unpivot(on=genre_cols_1, index=["explicit"], variable_name="track_genre", value_name="is_genre")
+        .filter(pl.col("is_genre") == 1)
+        .drop("is_genre")
+        .with_columns(
+            pl.col("track_genre").str.replace("track_genre_", "")
+        )
+        .group_by(["track_genre", "explicit"])
+        .len()
+        .rename({"len": "count"})
+    )
+
+    eda_genre_explicit_chart = (
+        alt.Chart(_genre_explicit)
+        .mark_bar()
+        .encode(
+            x=alt.X("track_genre:N", title="Genre", sort="-y"),
+            y=alt.Y("count:Q", title="Number of Tracks"),
+            color=alt.Color("explicit:N", title="Explicit",
+                            scale=alt.Scale(range=["steelblue", "tomato"])),
+            xOffset="explicit:N",  # groups bars side by side
+            tooltip=["track_genre", "explicit", "count"],
+        )
+        .properties(title="Explicit vs Non-Explicit Tracks per Genre", width=500, height=300)
+    )
+
+    eda_genre_explicit_chart
     return
 
 
 @app.cell
-def _(alt, clean_df, pd, pl):
-    _corr_cols = [c for c in clean_df.columns if clean_df[c].dtype in (pl.Float64, pl.Int64, pl.Int32) and c != "track_genre"]
-    _corr_pd = clean_df.select(_corr_cols).to_pandas().corr()
+def _():
+    return
+
+
+@app.cell
+def _(alt, categorical_df_3, pd, pl):
+    _corr_cols = [c for c in categorical_df_3.columns if categorical_df_3[c].dtype in (pl.Float64, pl.Int64, pl.Int32) and c != "track_genre"]
+    _corr_pd = categorical_df_3.select(_corr_cols).to_pandas().corr()
     _corr_melted = _corr_pd.reset_index().melt(id_vars="index")
     _corr_melted.columns = ["Feature 1", "Feature 2", "Correlation"]
 
@@ -728,34 +792,28 @@ def _(alt, clean_df, pd, pl):
 
 
 @app.cell
-def _(mo):
-    mo.md("""
-    Key correlations:
-
-    - **Energy and loudness** have a strong positive correlation (0.633) — louder tracks tend to be more energetic
-    - **Acousticness** is negatively correlated with both energy and loudness — acoustic tracks are quieter and calmer
-    - **Danceability and valence** show moderate positive correlation — happier-sounding tracks tend to be more danceable
-    - **Popularity shows almost no linear correlation with any individual audio feature** (all |r| ≤ 0.10). This means linear models will struggle — any predictive power must come from non-linear interactions or genre.
-
-    These correlations matter for modelling: energy-loudness multicollinearity could affect linear models (logistic regression, ridge).
-    Tree-based models are robust to this. We will use StandardScaler inside pipelines, which does not eliminate collinearity
-    but ensures no feature dominates due to scale.
-    """)
+def _():
     return
 
 
 @app.cell
-def _(mo):
-    mo.md("""
-    #### 1.3.3 Popularity by Genre
-    """)
-    return
+def _(alt, categorical_df_3, numeric_df_2, pl):
+    genre_cols_2 = [col for col in categorical_df_3.columns if col.startswith("track_genre_")]
 
+    _genre_popularity = (
+        categorical_df_3
+        .select(genre_cols_2)
+        .hstack(numeric_df_2.select("popularity"))
+        .unpivot(on=genre_cols_2, index=["popularity"], variable_name="track_genre", value_name="is_genre")
+        .filter(pl.col("is_genre") == 1)
+        .drop("is_genre")
+        .with_columns(
+            pl.col("track_genre").str.replace("track_genre_", "")
+        )
+    )
 
-@app.cell
-def _(alt, clean_df):
     eda_pop_genre_chart = (
-        alt.Chart(clean_df)
+        alt.Chart(_genre_popularity)
         .mark_boxplot(extent="min-max")
         .encode(
             x=alt.X("track_genre:N", title="Genre", sort="-y"),
@@ -783,14 +841,14 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md("""
-    #### 1.3.4 Feature Distributions by Genre
+    Feature Distributions by Genre
     """)
     return
 
 
 @app.cell
-def _(clean_df, mo, pl):
-    _feature_options = [c for c in clean_df.columns if clean_df[c].dtype in (pl.Float64, pl.Int64, pl.Int32) and c not in ("popularity", "track_genre")]
+def _(mo, numeric_df_2, pl):
+    _feature_options = [c for c in numeric_df_2.columns if numeric_df_2[c].dtype in (pl.Float64, pl.Int64, pl.Int32) and c != "popularity"]
     eda_feature_selector = mo.ui.dropdown(
         options=_feature_options,
         value="danceability",
@@ -801,9 +859,23 @@ def _(clean_df, mo, pl):
 
 
 @app.cell
-def _(alt, clean_df, eda_feature_selector):
+def _(alt, categorical_df_3, eda_feature_selector, numeric_df_2, pl):
+    genre_cols_3 = [col for col in categorical_df_3.columns if col.startswith("track_genre_")]
+
+    _feature_genre = (
+        categorical_df_3
+        .select(genre_cols_3)
+        .hstack(numeric_df_2.select(eda_feature_selector.value))
+        .unpivot(on=genre_cols_3, index=[eda_feature_selector.value], variable_name="track_genre", value_name="is_genre")
+        .filter(pl.col("is_genre") == 1)
+        .drop("is_genre")
+        .with_columns(
+            pl.col("track_genre").str.replace("track_genre_", "")
+        )
+    )
+
     eda_feature_genre_chart = (
-        alt.Chart(clean_df)
+        alt.Chart(_feature_genre)
         .mark_boxplot(extent="min-max")
         .encode(
             x=alt.X("track_genre:N", title="Genre"),
@@ -839,28 +911,29 @@ def _(mo):
     mo.md("""
     ### 1.4 EDA Summary — Implications for Downstream Tasks
 
-    **Key finding:** Popularity has near-zero linear correlation with every audio feature (all |r| ≤ 0.10).
-    No single feature is a good linear predictor of popularity. This will be the dominant theme across all modelling tasks.
+    **Key finding:** Popularity has near-zero linear correlation with every audio feature (all |r| ≤ 0.10). No single feature is a good linear predictor of popularity. This will be the dominant theme across all modelling tasks.
 
-    **For Clustering:** Audio features show some genre-related patterns (e.g., hip-hop's high speechiness)
-    but also significant overlap between genres like synth-pop and indie-pop. We expect clustering to
-    partially recover genre structure but not achieve clean separation. Standardisation is essential
-    because features like `duration_ms` (~200000) would dominate distance-based algorithms.
+    **For Clustering:** Audio features show some genre-related patterns (e.g., hip-hop's high speechiness) but also significant overlap between genres like synth-pop and indie-pop. We expect clustering to partially recover genre structure but not achieve clean separation. Standardisation is essential because features like `duration_ms` (~200000) would dominate distance-based algorithms.
 
-    **For Classification:** The popularity distribution suggests a roughly balanced binary split around the median.
-    Since no single audio feature correlates with popularity, ensemble models that capture non-linear interactions
-    will be essential. Logistic regression is expected to perform poorly.
-    However, popularity is driven by factors outside the dataset (marketing, artist fame), so accuracy will be limited.
+    **For Classification:** The popularity distribution suggests a roughly balanced binary split around the median. Since no single audio feature correlates with popularity, ensemble models that capture non-linear interactions will be essential. Logistic regression is expected to perform poorly. However, popularity is driven by factors outside the dataset (marketing, artist fame), so accuracy will be limited.
 
-    **For Regression:** The spike at zero popularity and the right-skewed distribution will make exact prediction
-    very difficult. The near-zero correlations mean R-squared for linear models will be extremely low.
-    The zero-popularity tracks add noise that hurts regression more than classification
+    **For Regression:** The spike at zero popularity and the right-skewed distribution will make exact prediction very difficult. The near-zero correlations mean R-squared for linear models will be extremely low. The zero-popularity tracks add noise that hurts regression more than classification
     (since most zeros fall below the median anyway, classification correctly assigns them to class 0).
-
 
 
     the dataset structures, distributions, and relationships present in the dataset. Once we have established the primary charachteristics of the dataset and concluded our inferences from our observations we will use these inferences to inform our approaces to clustering, classification and regression.
     """)
+    return
+
+
+@app.cell
+def _(categorical_df_3, numeric_df_2):
+    """
+    Generating final data frames after exploitory data anaysis
+    """
+    final_numeric_df = numeric_df_2
+    final_categorical_df = categorical_df_3
+    final_df = final_categorical_df.hstack(final_numeric_df)
     return
 
 
