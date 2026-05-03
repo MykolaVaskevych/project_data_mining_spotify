@@ -72,7 +72,7 @@ def _():
     )
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     # CS4168 Data Mining Project - Spotify Tracks Analysis (Group 14)
@@ -86,7 +86,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 1. Exploratory Data Analysis
@@ -128,7 +128,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     With the dataset loaded, we perform an initial inspection of its structure. We can see that the dataset is comprised of Spotify tracks across 5 genres (pop, indie-pop, synth-pop, r-n-b, hip-hop). There are 2,000 tracks (observations) and 17 columns (features), including both numerical and categorical features. Feature descriptors are taken from the datasets hugging face page to help contextualize their  meaning, scale and role within the analysis:
@@ -159,7 +159,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     In this section we begin are true analysis of the data. Focusing on techniques for analysis the numerical attributes across all 2,000 observations. To do this we must first partition our numeric and cateigorical features. For some features this is obvious; others require a bit more thougth.
@@ -202,12 +202,13 @@ def _(raw_df):
         "loudness", "speechiness", "acousticness", "instrumentalness",
         "liveness", "valence", "tempo"
     ]
-    numeric_df = raw_df.select(numeric_cols)
+    _deduped = raw_df.unique()
+    numeric_df = _deduped.select(numeric_cols)
 
     caetgorical_cols = [
         "track_genre", "time_signature", "mode", "key", "explicit"
     ]
-    categorical_df = raw_df.select(caetgorical_cols)
+    categorical_df = _deduped.select(caetgorical_cols)
     return categorical_df, numeric_df
 
 
@@ -639,7 +640,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 1.3 EDA of Categorical Data
@@ -678,7 +679,7 @@ def _(categorical_df_1, pl):
     return (categorical_df_3,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     #### 1.3.2 Track Genre Analysis
@@ -717,7 +718,7 @@ def _(alt, categorical_df_3, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     The genre distribution is imbalanced: pop and indie-pop have the most tracks (~500 each), while r-n-b and hip-hop have fewer (~300 each). Synth-pop sits in between (~400). This is worth noting if genre is used as a classification target, as a model could achieve reasonable accuracy by simply predicting the majority class. For clustering, genre labels won't be used as input, but if we later compare clusters to genres, we should expect the larger genres to be spread across or dominate more clusters.
@@ -761,7 +762,7 @@ def _(alt, categorical_df_3, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     return
 
@@ -788,7 +789,7 @@ def _(alt, categorical_df_3, pd, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     return
 
@@ -823,7 +824,7 @@ def _(alt, categorical_df_3, numeric_df_2, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     **Synth-pop** has the lowest median popularity (29), while **pop** has the highest (66).
@@ -835,7 +836,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     Feature Distributions by Genre
@@ -889,7 +890,7 @@ def _(alt, categorical_df_3, eda_feature_selector, numeric_df_2, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     Using the dropdown above, we can explore how each audio feature varies across genres:
@@ -903,7 +904,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 1.4 EDA Summary — Implications for Downstream Tasks
@@ -931,7 +932,7 @@ def _(categorical_df_3, numeric_df_2):
     return final_categorical_df, final_df
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 2. Clustering (Descriptive Analytics)
@@ -943,7 +944,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.1 Preparing Features for Clustering
@@ -982,7 +983,7 @@ def _(final_categorical_df, final_df, mo):
     return cl_X, cl_genres
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.2 K-Means: Elbow Method
@@ -1018,7 +1019,7 @@ def _(KMeans, Pipeline, StandardScaler, alt, cl_X, pl):
     return (km_k_range,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     The elbow plot shows diminishing returns in inertia reduction after approximately **k=5**, which aligns with
@@ -1029,7 +1030,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.3 K-Means: Silhouette Analysis
@@ -1089,7 +1090,7 @@ def _(km_silhouettes, mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.4 K-Means: Comparing k=3 and k=5
@@ -1175,7 +1176,7 @@ def _(km_labels_3, km_labels_5, km_pca, km_pca_coords, mo, silhouette_score):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.5 K-Means: Cluster vs Genre Alignment
@@ -1203,7 +1204,7 @@ def _(alt, cl_genres, km_labels_5, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     The cross-tabulation reveals that K-Means clusters do **not** cleanly correspond to genres.
@@ -1216,7 +1217,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.6 DBSCAN Clustering
@@ -1260,7 +1261,7 @@ def _(DBSCAN, Pipeline, StandardScaler, cl_X, cl_genres, pl, silhouette_score):
     return (db_results,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     DBSCAN struggles with this dataset. At low `eps` values, most points are classified as noise.
@@ -1273,7 +1274,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.7 DBSCAN: Best Configuration
@@ -1341,7 +1342,7 @@ def _(
     return (db_labels,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.8 DBSCAN: Cluster vs Genre Alignment
@@ -1369,7 +1370,7 @@ def _(alt, cl_genres, db_labels, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     DBSCAN's genre alignment depends heavily on the eps value. At low eps, most tracks are noise.
@@ -1380,7 +1381,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2.9 Clustering Conclusion
@@ -1402,7 +1403,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 3. Classification (Predicting Popularity Category)
@@ -1410,7 +1411,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.1 Creating the Binary Target
@@ -1435,7 +1436,7 @@ def _(final_df, mo, pl):
     return (clf_df,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.2 Preparing Data and Pipeline
@@ -1472,7 +1473,7 @@ def _(StandardScaler, clf_df, mo, train_test_split):
     return clf_X_test, clf_X_train, clf_preprocessor, clf_y_test, clf_y_train
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.3 Evaluation Metric Justification
@@ -1485,7 +1486,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.4 Model 1: Logistic Regression
@@ -1505,7 +1506,7 @@ def _(
 ):
     clf_lr_pipe = Pipeline([
         ("preprocessor", clf_preprocessor),
-        ("clf", LogisticRegression(max_iter=1000, random_state=42)),
+        ("clf", LogisticRegression(solver="saga", max_iter=3000, random_state=42, C=0.019069601332062702, l1_ratio=1.0)),
     ])
     clf_lr_cv = cross_val_score(clf_lr_pipe, clf_X_train, clf_y_train, cv=5, scoring="accuracy")
 
@@ -1520,7 +1521,7 @@ def _(
     return clf_lr_cv, clf_lr_pipe
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.5 Model 2: Random Forest
@@ -1540,7 +1541,7 @@ def _(
 ):
     clf_rf_pipe = Pipeline([
         ("preprocessor", clf_preprocessor),
-        ("clf", RandomForestClassifier(n_estimators=200, random_state=42)),
+        ("clf", RandomForestClassifier(random_state=42, max_depth=30, max_features=0.3, min_samples_leaf=1, min_samples_split=6, n_estimators=367)),
     ])
     clf_rf_cv = cross_val_score(clf_rf_pipe, clf_X_train, clf_y_train, cv=5, scoring="accuracy")
 
@@ -1555,7 +1556,7 @@ def _(
     return clf_rf_cv, clf_rf_pipe
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.6 Model 3: Gradient Boosting
@@ -1575,7 +1576,7 @@ def _(
 ):
     clf_gb_pipe = Pipeline([
         ("preprocessor", clf_preprocessor),
-        ("clf", GradientBoostingClassifier(n_estimators=200, random_state=42)),
+        ("clf", GradientBoostingClassifier(random_state=42, learning_rate=0.014001084651129406, max_depth=7, max_features="log2", min_samples_split=13, n_estimators=222, subsample=0.9879515306830556)),
     ])
     clf_gb_cv = cross_val_score(clf_gb_pipe, clf_X_train, clf_y_train, cv=5, scoring="accuracy")
 
@@ -1590,7 +1591,7 @@ def _(
     return clf_gb_cv, clf_gb_pipe
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.7 Classification Model Comparison
@@ -1639,7 +1640,33 @@ def _(clf_gb_cv, clf_lr_cv, clf_rf_cv, mo):
     return
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    #### Hyperparameter Search Results
+
+    Each model was tuned with `RandomizedSearchCV` (200 random configurations, 5-fold CV, `n_jobs=-1`).
+    The table shows all 600 experiments — filterable by model, sortable by score.
+    """)
+    return
+
+
 @app.cell
+def _(mo, pl):
+    import os as _os
+    mo.stop(
+        not _os.path.exists("clf_tuning_results.csv"),
+        mo.md("Run `uv run python tune.py` to generate tuning results."),
+    )
+    _clf_tuning = pl.read_csv("clf_tuning_results.csv").with_columns(
+        pl.col("mean_cv_score").round(4),
+        pl.col("std_cv_score").round(4),
+    )
+    mo.ui.table(_clf_tuning)
+    return
+
+
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.8 Final Classification Model: Test Set Evaluation
@@ -1711,7 +1738,7 @@ def _(
     return (clf_final_pipe,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 3.9 Feature Importance for Classification
@@ -1746,7 +1773,7 @@ def _(alt, clf_final_pipe, np, pl):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     **No single feature dominates** — all audio features contribute roughly equally (6-10% importance each).
@@ -1759,7 +1786,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 4. Regression (Predicting Popularity Score)
@@ -1767,7 +1794,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.1 Preparing Data for Regression
@@ -1801,7 +1828,7 @@ def _(StandardScaler, final_df, mo, train_test_split):
     return reg_X_test, reg_X_train, reg_preprocessor, reg_y_test, reg_y_train
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.2 Evaluation Metric Justification
@@ -1817,7 +1844,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.3 Model 1: Ridge Regression
@@ -1838,7 +1865,7 @@ def _(
 ):
     reg_ridge_pipe = Pipeline([
         ("preprocessor", reg_preprocessor),
-        ("reg", Ridge(alpha=1.0)),
+        ("reg", Ridge(alpha=495.353520895918)),
     ])
     reg_ridge_cv_mse = cross_val_score(reg_ridge_pipe, reg_X_train, reg_y_train, cv=5, scoring="neg_mean_squared_error")
     reg_ridge_cv_r2 = cross_val_score(reg_ridge_pipe, reg_X_train, reg_y_train, cv=5, scoring="r2")
@@ -1857,7 +1884,7 @@ def _(
     return reg_ridge_cv_mse, reg_ridge_cv_r2, reg_ridge_pipe
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.4 Model 2: Random Forest Regressor
@@ -1878,7 +1905,7 @@ def _(
 ):
     reg_rf_pipe = Pipeline([
         ("preprocessor", reg_preprocessor),
-        ("reg", RandomForestRegressor(n_estimators=200, random_state=42)),
+        ("reg", RandomForestRegressor(random_state=42, max_depth=25, max_features="sqrt", min_samples_leaf=1, min_samples_split=2, n_estimators=166)),
     ])
     reg_rf_cv_mse = cross_val_score(reg_rf_pipe, reg_X_train, reg_y_train, cv=5, scoring="neg_mean_squared_error")
     reg_rf_cv_r2 = cross_val_score(reg_rf_pipe, reg_X_train, reg_y_train, cv=5, scoring="r2")
@@ -1893,7 +1920,7 @@ def _(
     return reg_rf_cv_mse, reg_rf_cv_r2, reg_rf_pipe
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.5 Model 3: Gradient Boosting Regressor
@@ -1914,7 +1941,7 @@ def _(
 ):
     reg_gb_pipe = Pipeline([
         ("preprocessor", reg_preprocessor),
-        ("reg", GradientBoostingRegressor(n_estimators=200, random_state=42)),
+        ("reg", GradientBoostingRegressor(random_state=42, learning_rate=0.022949120907478242, max_depth=7, max_features=1.0, min_samples_split=4, n_estimators=221, subsample=0.8550229885420852)),
     ])
     reg_gb_cv_mse = cross_val_score(reg_gb_pipe, reg_X_train, reg_y_train, cv=5, scoring="neg_mean_squared_error")
     reg_gb_cv_r2 = cross_val_score(reg_gb_pipe, reg_X_train, reg_y_train, cv=5, scoring="r2")
@@ -1929,7 +1956,7 @@ def _(
     return reg_gb_cv_mse, reg_gb_cv_r2, reg_gb_pipe
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.6 Regression Model Comparison
@@ -2009,7 +2036,33 @@ def _(mo, reg_gb_cv_r2, reg_rf_cv_r2, reg_ridge_cv_r2):
     return
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    #### Hyperparameter Search Results
+
+    Ridge used `GridSearchCV` over 60 log-spaced alpha values. RF and GB used `RandomizedSearchCV`
+    (200 configurations each, 5-fold CV). Table shows all 460 experiments.
+    """)
+    return
+
+
 @app.cell
+def _(mo, pl):
+    import os as _os
+    mo.stop(
+        not _os.path.exists("reg_tuning_results.csv"),
+        mo.md("Run `uv run python tune.py` to generate tuning results."),
+    )
+    _reg_tuning = pl.read_csv("reg_tuning_results.csv").with_columns(
+        pl.col("mean_cv_score").round(4),
+        pl.col("std_cv_score").round(4),
+    )
+    mo.ui.table(_reg_tuning)
+    return
+
+
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.7 Final Regression Model: Test Set Evaluation
@@ -2077,7 +2130,7 @@ def _(
     return reg_final_pipe, reg_final_pred
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.8 Residual Analysis
@@ -2111,7 +2164,7 @@ def _(alt, pd, reg_final_pred, reg_y_test):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     The residual plot shows whether prediction errors are systematic. Ideally, residuals should be
@@ -2122,7 +2175,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.9 Feature Importance for Regression
@@ -2157,7 +2210,7 @@ def _(alt, np, pl, reg_final_pipe):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     The feature importance ranking for regression is very similar to classification: acousticness, tempo,
@@ -2168,7 +2221,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 4.10 Classification vs Regression: Difficulty Comparison
@@ -2224,7 +2277,7 @@ def _(
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 5. Conclusion
@@ -2232,7 +2285,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### Key Findings
@@ -2265,7 +2318,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## Appendix: Mistakes Found and Corrected
