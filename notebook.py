@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.21.0"
-app = marimo.App(width="medium")
+app = marimo.App(width="medium", layout_file="layouts/notebook.slides.json")
 
 
 @app.cell
@@ -43,13 +43,11 @@ def _():
 
     alt.data_transformers.enable("vegafusion")
     return (
-        ColumnTransformer,
         DBSCAN,
         GradientBoostingClassifier,
         GradientBoostingRegressor,
         KMeans,
         LogisticRegression,
-        OneHotEncoder,
         PCA,
         Pipeline,
         RandomForestClassifier,
@@ -125,7 +123,7 @@ def _(mo, pl):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
- 
+
     """)
     return
 
@@ -478,7 +476,6 @@ def _(mo, new_clean_numeric_df, pl):
 
     Given the strong separation between near-zero values and the small proportion of high-confidence instrumental tracks, a binary representation is considered for downstream analysis. To evaluate this, we examine the impacts of different thresholds for binarization on other features of the dataset to examine whether the 5 number summary group-wise distributions remain stable across thresholds.
     """)
-
     return
 
 
@@ -928,13 +925,10 @@ def _(mo):
 
 @app.cell
 def _(categorical_df_3, numeric_df_2):
-    """
-    Generating final data frames after exploitory data anaysis
-    """
     final_numeric_df = numeric_df_2
     final_categorical_df = categorical_df_3
     final_df = final_categorical_df.hstack(final_numeric_df)
-    return
+    return final_categorical_df, final_df
 
 
 @app.cell
@@ -958,25 +952,32 @@ def _(mo):
 
 
 @app.cell
-def _(clean_df, mo):
-    cl_feature_cols = [c for c in clean_df.columns if c not in ("track_genre", "popularity")]
-    cl_X = clean_df.select(cl_feature_cols).to_pandas().values
-    cl_genres = clean_df["track_genre"].to_list()
+def _(final_categorical_df, final_df, mo):
+    cl_feature_cols = [c for c in final_df.columns if c != "popularity" and not c.startswith("track_genre_")]
+    cl_X = final_df.select(cl_feature_cols).to_pandas().values
+
+    _genre_ohe_cols = [c for c in final_categorical_df.columns if c.startswith("track_genre_")]
+    cl_genres = (
+        final_categorical_df
+        .select(_genre_ohe_cols)
+        .to_pandas()
+        .idxmax(axis=1)
+        .str.replace("track_genre_", "", regex=False)
+        .tolist()
+    )
 
     mo.md(f"""
     **Clustering features ({len(cl_feature_cols)}):** {', '.join(cl_feature_cols)}
 
-    We drop `track_genre` as required by the spec (clustering is unsupervised — we want to discover structure
+    We drop all `track_genre_*` columns as required by the spec (clustering is unsupervised — we want to discover structure
     from audio features alone). We also drop `popularity` because including it would bias clusters toward
     popularity-based groupings rather than audio-feature-based groupings; our goal is to see whether audio
     features reveal genre structure.
 
     **Preprocessing justification:** We use `StandardScaler` inside all clustering pipelines because K-Means
-    uses Euclidean distance, which is sensitive to scale. Without scaling, `duration_ms` (~200000) would
-    dominate over features like `danceability` (~0.7). DBSCAN's `eps` parameter also depends on distance scale.
+    uses Euclidean distance, which is sensitive to scale. DBSCAN's `eps` parameter also depends on distance scale.
     We do not apply PCA as a preprocessing step — PCA would reduce interpretability and is only used later for
-    2D visualisation. We do not log-transform skewed features because StandardScaler is sufficient for
-    distance-based algorithms and preserves the original feature semantics.
+    2D visualisation.
     """)
     return cl_X, cl_genres
 
@@ -1418,9 +1419,9 @@ def _(mo):
 
 
 @app.cell
-def _(clean_df, mo, pl):
-    clf_median = clean_df["popularity"].median()
-    clf_df = clean_df.with_columns(
+def _(final_df, mo, pl):
+    clf_median = final_df["popularity"].median()
+    clf_df = final_df.with_columns(
         pl.when(pl.col("popularity") > clf_median).then(1).otherwise(0).alias("popularity_binary")
     ).drop("popularity")
 
@@ -1443,17 +1444,8 @@ def _(mo):
 
 
 @app.cell
-def _(
-    ColumnTransformer,
-    OneHotEncoder,
-    StandardScaler,
-    clf_df,
-    mo,
-    train_test_split,
-):
+def _(StandardScaler, clf_df, mo, train_test_split):
     _clf_pdf = clf_df.to_pandas()
-    clf_numeric_cols = [c for c in _clf_pdf.columns if c not in ("track_genre", "popularity_binary")]
-    clf_cat_cols = ["track_genre"]
 
     clf_X = _clf_pdf.drop(columns=["popularity_binary"])
     clf_y = _clf_pdf["popularity_binary"].values
@@ -1462,16 +1454,12 @@ def _(
         clf_X, clf_y, test_size=0.2, random_state=42, stratify=clf_y
     )
 
-    clf_preprocessor = ColumnTransformer([
-        ("num", StandardScaler(), clf_numeric_cols),
-        ("cat", OneHotEncoder(drop="first", sparse_output=False), clf_cat_cols),
-    ])
+    clf_preprocessor = StandardScaler()
 
     mo.md(f"""
-    **Features:** {len(clf_numeric_cols)} numeric + 1 categorical (`track_genre`, one-hot encoded)
+    **Features:** {clf_X.shape[1]} — all numeric (genre already one-hot encoded in EDA, explicit and instrumentalness_binary as int)
 
-    **Pipeline structure:** `ColumnTransformer` (StandardScaler for numeric, OneHotEncoder for genre) → Model.
-    All preprocessing is inside the pipeline, preventing data leakage — the scaler fits only on training folds during CV.
+    **Pipeline structure:** `StandardScaler` → Model. All preprocessing is inside the pipeline, preventing data leakage — the scaler fits only on training folds during CV.
 
     **Train/test split:** 80/20, stratified by target class, `random_state=42` for reproducibility.
     We use stratified splitting because even though classes are roughly balanced by construction (median split),
@@ -1788,19 +1776,8 @@ def _(mo):
 
 
 @app.cell
-def _(
-    ColumnTransformer,
-    OneHotEncoder,
-    StandardScaler,
-    clean_df,
-    mo,
-    train_test_split,
-):
-    reg_df = clean_df
-
-    _reg_pdf = reg_df.to_pandas()
-    reg_numeric_cols = [c for c in _reg_pdf.columns if c not in ("track_genre", "popularity")]
-    reg_cat_cols = ["track_genre"]
+def _(StandardScaler, final_df, mo, train_test_split):
+    _reg_pdf = final_df.to_pandas()
 
     reg_X = _reg_pdf.drop(columns=["popularity"])
     reg_y = _reg_pdf["popularity"].values
@@ -1809,17 +1786,13 @@ def _(
         reg_X, reg_y, test_size=0.2, random_state=42
     )
 
-    reg_preprocessor = ColumnTransformer([
-        ("num", StandardScaler(), reg_numeric_cols),
-        ("cat", OneHotEncoder(drop="first", sparse_output=False), reg_cat_cols),
-    ])
+    reg_preprocessor = StandardScaler()
 
     mo.md(f"""
     We use a **separate copy** of the cleaned dataset with the original `popularity` column retained
     (not binarised), as required by the spec.
 
-    **Pipeline structure:** Same `ColumnTransformer` pattern as classification (StandardScaler for numeric,
-    OneHotEncoder for genre) → Regression model. All preprocessing inside the pipeline.
+    **Pipeline structure:** `StandardScaler` → Regression model. All preprocessing inside the pipeline.
 
     **Train/test split:** 80/20, `random_state=42`. Not stratified (continuous target).
 
